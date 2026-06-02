@@ -1,0 +1,76 @@
+https://www.kaggle.com/competitions/birdclef-2026/data
+import kagglehub
+
+# Download latest version
+path = kagglehub.competition_download('birdclef-2026')
+
+print("Path to competition files:", path)
+
+BC2026-Distilled-SED-Public
+https://www.kaggle.com/datasets/tuckerarrants/bc2026-distilled-sed-public
+import kagglehub
+
+# Download latest version
+path = kagglehub.dataset_download("tuckerarrants/bc2026-distilled-sed-public")
+
+print("Path to dataset files:", path)
+
+
+BirdCLEF-2026-waveform-cache
+https://www.kaggle.com/datasets/tuckerarrants/birdclef-2026-waveform-cache
+import kagglehub
+
+# Download latest version
+path = kagglehub.dataset_download("tuckerarrants/birdclef-2026-waveform-cache")
+
+print("Path to dataset files:", path)
+
+https://www.kaggle.com/datasets/jaejohn/perch-meta
+perch_meta
+
+import kagglehub
+
+# Download latest version
+path = kagglehub.dataset_download("jaejohn/perch-meta")
+
+print("Path to dataset files:", path)
+
+https://www.kaggle.com/datasets/tuckerarrants/perch-v2-no-dft-onnx
+perch_v2_no_dft.onnx
+
+import kagglehub
+
+# Download latest version
+path = kagglehub.dataset_download("tuckerarrants/perch-v2-no-dft-onnx")
+
+print("Path to dataset files:", path)
+
+https://www.kaggle.com/datasets/rishikeshjani/perch-onnx-for-birdclef-2026
+Perch-onnx-for-birdclef+2026
+
+import kagglehub
+
+# Download latest version
+path = kagglehub.dataset_download("rishikeshjani/perch-onnx-for-birdclef-2026")
+
+print("Path to dataset files:", path)
+
+https://www.kaggle.com/datasets/hideyukizushi/sgkfk-202604041716
+SGKF|K-202604041716
+
+import kagglehub
+
+# Download latest version
+path = kagglehub.dataset_download("hideyukizushi/sgkfk-202604041716")
+
+print("Path to dataset files:", path)
+
+https://www.kaggle.com/code/ashok205/tf-wheels
+tf_wheels
+tf-wheels.ipynb
+kaggle kernels pull ashok205/tf-wheels
+
+https://www.kaggle.com/code/hideyukizushi/bird26-reprod-perch-proto-residualssm-train-s7177
+Bird26|REPROD|Perch+Proto/ResidualSSM|Train|s7177
+
+kaggle kernels pull hideyukizushi/bird26-reprod-perch-proto-residualssm-train-s7177
