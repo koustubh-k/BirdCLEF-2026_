@@ -119,51 +119,33 @@ To maximize leaderboard performance, the following high-yield adjustments have b
 
 ## 5. Kaggle Execution Workflow: How to Train and Submit
 
-The notebook `birdclef-2026-v14.ipynb` supports both cross-validation training and final submit modes.
+The notebook `birdclef-2026-v14.ipynb` features a centralized **GLOBAL PIPELINE CONTROLLER** (Cell 1, located at the very top of the notebook). You can manage training, submission, weight bypasses, and threshold overrides globally from this single block.
 
 ### A. How to Train New Models
 1.  **Mount Data Sources**:
     *   Upload the target competition dataset (`birdclef-2026`).
     *   Mount the cache datasets containing pre-extracted features (such as `jaejohn/perch-meta`).
-2.  **Configure Target Model Cell**:
-    *   Go to the target execution block (for example, Cell 33 / `Model_74`).
-    *   Set **`MODE = "train"`** (located at the top of the cell block):
-        ```python
-        MODE = "train"
-        ```
-    *   Disable pre-trained weights to force training from scratch:
-        ```python
-        ProtoSSM_PATH = None
-        ProtoSSM_JSON = None
-        ResidualSSM_PATH = None
-        ```
+2.  **Configure Global Controller Cell (Cell 1)**:
+    *   Set `GLOBAL_MODE = "train"`
+    *   Set `FORCE_TRAIN_FROM_SCRATCH = True` (to bypass loading pre-trained weights)
 3.  **Execute Cells**:
-    *   Run the configuration and parameter setup cells (Cells 4–5).
-    *   Run the target model cell.
-    *   The model will split the cached training data (`meta_tr`, `emb_tr`, `sc_tr`) into folds using `GroupKFold` (based on audio filenames).
-    *   It will fit:
-        *   `train_light_proto_ssm`: Training Mamba sequence state-space model weights.
-        *   `train_mlp_probes`: Fitting multi-layer perceptron dense classifiers.
-        *   `train_residual_ssm`: Fitting residual correction sequence networks.
-    *   It will output validation out-of-fold metrics (Macro AUC), run threshold calibration using `calibrate_and_optimize_thresholds` (which outputs a 234-element threshold array in the logs), and save the trained weights (e.g. `proto_ssm_best.pt` and `residual_ssm_best.pt`) to `/kaggle/working/`.
+    *   Run the notebook cells sequentially.
+    *   The active model blocks (`Model_22`, `Model_51`, `Model_74`) will read these global variables, bypass weights loading, train Mamba/ResidualSSM/MLP classifiers on the fly, output validation metrics, calibrate thresholds (generating the 234-element array in the logs), and save files to `/kaggle/working/`.
 
-### B. How to Submit to Kaggle (with Threshold Injection - Tactic 1)
-1.  **Configure Target Model Cell**:
-    *   Set **`MODE = "submit"`** inside the model cell.
-    *   Verify that `solutions['Models']` contains the correct weights file paths pointing to your trained checkpoints (which can be uploaded as a private Kaggle dataset).
-2.  **Inject Calibrated Thresholds**:
-    *   Under `MODE == "submit"`, models that bypass training (like `Model_22`) default to flat `0.5` thresholds. To apply optimized species-specific thresholds (ranging between 0.20 and 0.70):
-    *   Copy the 234-element threshold array generated in your training log.
-    *   Locate the `# USER OPTIMIZATION: ...` comments added right before predictions are thresholded (e.g., around line 1271 in `Model_74` or line 3211 in `Model_22`).
-    *   Uncomment and define the array:
+### B. How to Submit to Kaggle (with Threshold Injection)
+1.  **Configure Global Controller Cell (Cell 1)**:
+    *   Set `GLOBAL_MODE = "submit"`
+    *   Set `FORCE_TRAIN_FROM_SCRATCH = False` (to load pre-trained weights)
+    *   Copy the 234-element threshold array from your training log, and paste it to define `GLOBAL_INJECTED_THRESHOLDS`:
         ```python
-        PER_CLASS_THRESHOLDS = np.array([0.312, 0.450, 0.225, ..., 0.500]) # 234 elements
+        import numpy as np
+        GLOBAL_INJECTED_THRESHOLDS = np.array([0.312, 0.450, 0.225, ..., 0.500]) # 234 elements
         ```
-3.  **Save Notebook (Commit Run)**:
+2.  **Save Notebook (Commit Run)**:
     *   Click **"Save Version"** in Kaggle.
-    *   The notebook will run on the public test set, which has 0 files. The script will detect this dry-run environment and automatically fall back to the first 5 ogg files in `train_soundscapes` to generate a dummy `submission.csv` matching the `sample_submission.csv` row and column layout.
-    *   This ensures the save completes successfully.
-4.  **Submit to Leaderboard**:
-    *   Once the save run completes, go to the notebook viewer and click **"Submit to Competition"**.
-    *   Kaggle will swap in the hidden test set, run the code with `MODE = "submit"`, perform actual sequence predictions on the test soundscapes (utilizing your injected thresholds), and output the final prediction table.
+    *   The notebook will run on the public test set, detect the dry-run, and output a dummy `submission.csv` matching `sample_submission.csv`.
+3.  **Submit to Leaderboard**:
+    *   Once the save run completes, click **"Submit to Competition"** in the notebook viewer.
+    *   Kaggle will swap in the hidden test set, run sequence predictions, apply the globally injected thresholds, and generate the final output.
+
 
