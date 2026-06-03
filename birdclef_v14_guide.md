@@ -81,7 +81,7 @@ class LightProtoSSM(nn.Module):
 
 ---
 
-## 4. Calibration & Post-Processing Pipeline
+## 4. Calibration, Blending & Post-Processing Pipeline
 
 ### `apply_calibration()`
 ```python
@@ -101,31 +101,19 @@ def apply_calibration(probs: np.ndarray, calibrators: Dict[int, IsotonicRegressi
 *   **Lines 5–6:** Applies class-specific isotonic regression models fit during cross-validation OOF tuning.
 *   **Lines 7–10:** If a class had insufficient positive training samples for a custom model, falls back to an aggregated taxon-level calibrator (e.g. shared calibration model for all related birds in the same family).
 
-### `f_TAX_SMOOTHING_POSTPROC()` (v14 Version)
-```python
-def f_TAX_SMOOTHING_POSTPROC(func_add=direct, genus_α=0.15, class_α=0.05):
-    submission = func_add()
-    submission = _to_indexed_prob_frame(submission)
-    # ... Genus/Class taxonomy mapping loading ...
-    probs = submission.to_numpy(dtype=np.float32, copy=True)
-    cols = list(submission.columns)
-    
-    # Adaptive taxonomy smoothing loops
-    for members in multi_genus.values():
-        idx = [col_to_i[m] for m in members if m in col_to_i]
-        group_mean = probs[:, idx].mean(axis=1, keepdims=True)
-        probs[:, idx] = (1.0 - genus_α) * probs[:, idx] + genus_α * group_mean
-        
-    for members in multi_class.values():
-        idx = [col_to_i[m] for m in members if m in col_to_i]
-        group_mean = probs[:, idx].mean(axis=1, keepdims=True)
-        probs[:, idx] = (1.0 - class_α) * probs[:, idx] + class_α * group_mean
-        
-    return pd.DataFrame(np.clip(probs, 0.0, 1.0), index=submission.index, columns=cols)
-```
-*   **Line 2:** Computes the ensembled raw predictions.
-*   **Lines 9–12:** Blends predictions of species belonging to the same Genus taxonomy grouping using the global smoothing weight `genus_α`.
-*   **Lines 14–17:** Blends predictions of species in the same broad taxonomic Class using `class_α`.
+### Tuned Ensembling & Post-Processing Optimizations
+
+To maximize leaderboard performance, the following high-yield adjustments have been implemented directly in the pipeline code:
+
+1.  **xSED Ensemble Weight Shift (Tactic 4):**
+    The blending weights inside `solutions['Models']` for `Model_74` are shifted from `[0.60, 0.40]` to `[0.65, 0.35]`. This places higher confidence (65%) on the sequence-aware ProtoSSM predictions than the frame-wise SED predictions (`35%`), enhancing generalization on the hidden test soundscapes.
+2.  **Increased Rank-Aware Scaling Power (Tactic 3):**
+    The power scalar used in `rank_aware_scaling(probs, n_windows=12, power=power)` has been pushed from `0.60` (or `0.65`) to **`0.68`** across active models (`Model_51` and `Model_74`). This aggressive scaling dampens predictions in files with low overall confidence.
+3.  **Tuned Japanese Amendment Gates (Tactic 2):**
+    The logic gates controlling the blend between the SED and ProtoSSM models have been optimized.
+    *   **Original:** `proto_cont = (xctx > 0.88) & (rank_proto > 0.77) & (p_sed < 0.14) & (~fake_only)`
+    *   **Optimized:** `proto_cont = (xctx > 0.90) & (rank_proto > 0.77) & (p_sed < 0.15) & (~fake_only)`
+    *   *Rationale:* Relaxing the SED constraint slightly (`p_sed < 0.15`) captures faint calls, while tightening the temporal context threshold (`xctx > 0.90`) guards against isolated false positives.
 
 ---
 
@@ -138,10 +126,16 @@ The notebook `birdclef-2026-v14.ipynb` supports both cross-validation training a
     *   Upload the target competition dataset (`birdclef-2026`).
     *   Mount the cache datasets containing pre-extracted features (such as `jaejohn/perch-meta`).
 2.  **Configure Target Model Cell**:
-    *   Go to the target execution block (for example, Cell 23 / `Model_74`).
+    *   Go to the target execution block (for example, Cell 33 / `Model_74`).
     *   Set **`MODE = "train"`** (located at the top of the cell block):
         ```python
         MODE = "train"
+        ```
+    *   Disable pre-trained weights to force training from scratch:
+        ```python
+        ProtoSSM_PATH = None
+        ProtoSSM_JSON = None
+        ResidualSSM_PATH = None
         ```
 3.  **Execute Cells**:
     *   Run the configuration and parameter setup cells (Cells 4–5).
@@ -151,16 +145,25 @@ The notebook `birdclef-2026-v14.ipynb` supports both cross-validation training a
         *   `train_light_proto_ssm`: Training Mamba sequence state-space model weights.
         *   `train_mlp_probes`: Fitting multi-layer perceptron dense classifiers.
         *   `train_residual_ssm`: Fitting residual correction sequence networks.
-    *   It will output validation out-of-fold metrics (Macro AUC) and save the trained weights (e.g. `proto_ssm_best.pt` and `residual_ssm_best.pt`) to `/kaggle/working/`.
+    *   It will output validation out-of-fold metrics (Macro AUC), run threshold calibration using `calibrate_and_optimize_thresholds` (which outputs a 234-element threshold array in the logs), and save the trained weights (e.g. `proto_ssm_best.pt` and `residual_ssm_best.pt`) to `/kaggle/working/`.
 
-### B. How to Submit to Kaggle
+### B. How to Submit to Kaggle (with Threshold Injection - Tactic 1)
 1.  **Configure Target Model Cell**:
     *   Set **`MODE = "submit"`** inside the model cell.
     *   Verify that `solutions['Models']` contains the correct weights file paths pointing to your trained checkpoints (which can be uploaded as a private Kaggle dataset).
-2.  **Save Notebook (Commit Run)**:
+2.  **Inject Calibrated Thresholds**:
+    *   Under `MODE == "submit"`, models that bypass training (like `Model_22`) default to flat `0.5` thresholds. To apply optimized species-specific thresholds (ranging between 0.20 and 0.70):
+    *   Copy the 234-element threshold array generated in your training log.
+    *   Locate the `# USER OPTIMIZATION: ...` comments added right before predictions are thresholded (e.g., around line 1271 in `Model_74` or line 3211 in `Model_22`).
+    *   Uncomment and define the array:
+        ```python
+        PER_CLASS_THRESHOLDS = np.array([0.312, 0.450, 0.225, ..., 0.500]) # 234 elements
+        ```
+3.  **Save Notebook (Commit Run)**:
     *   Click **"Save Version"** in Kaggle.
     *   The notebook will run on the public test set, which has 0 files. The script will detect this dry-run environment and automatically fall back to the first 5 ogg files in `train_soundscapes` to generate a dummy `submission.csv` matching the `sample_submission.csv` row and column layout.
     *   This ensures the save completes successfully.
-3.  **Submit to Leaderboard**:
+4.  **Submit to Leaderboard**:
     *   Once the save run completes, go to the notebook viewer and click **"Submit to Competition"**.
-    *   Kaggle will swap in the hidden test set, run the code with `MODE = "submit"`, perform actual sequence predictions on the test soundscapes, and output the final prediction table.
+    *   Kaggle will swap in the hidden test set, run the code with `MODE = "submit"`, perform actual sequence predictions on the test soundscapes (utilizing your injected thresholds), and output the final prediction table.
+
